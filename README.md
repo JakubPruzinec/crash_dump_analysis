@@ -1,10 +1,10 @@
-# disclaimer
+# Disclaimer
 
-This project has been done under supervision of RedHat reverse engineers. Analysis report is quite complex and there were mutiple students attending Crash(8) course. Imagining the amount our supervisors have to spend reading all our work lead me to spicing it up a little...  
+This project has been done under supervision of RedHat reverse engineers. Analysis report is quite complex and there were mutiple students attending Crash(8) course. Imagining the amount of text our supervisors have to read lead me to spicing it up a little...  
   
 I'll add relevant memory dump after its authors approval...
 
-# crash_dump_analysis
+# Crashdump analysis write up
 
 Inspector Jacques Pruzo reporting in.  
   
@@ -52,7 +52,7 @@ now back to the backtrack
     #16 [ffff9a63f041ff50] system_call_fastpath at ffffffff8311f7d5
 ```
 by looking at the sequence now it is obvious, that panic was caused by "trigger"ing it,  
-but it wasn't while Jacques was on the case, so lets check it...  
+but it wasn't while Jacques was on the case, so let's check it...  
   
 as the kernel panicked, it stored all its registers, RIP is relevant to us now  
 ```
@@ -93,7 +93,7 @@ Inspector Jacques assumption: deadlock probably
       10462  10439   6  ffff9a6475eedee0  UN   0.1  107368   5132  dhclient
       10485  10468   5  ffff9a6475814f10  UN   0.0    7000    528  ip
 ```
-Alright, all suspended, lets look what's up with them  
+Alright, all suspended, let's look what's up with them  
   
 dhclient  
 ```
@@ -111,13 +111,13 @@ dhclient
     #10 [ffff9a64775aff50] system_call_fastpath at ffffffff8311f7d5
 ```
 looks like dhclient locked a mutex, got suspended and never woken up  
-lets find out what mutex it was, targeted function sure has a pointer  
+let's find out what mutex it was, targeted function sure has a pointer  
 to targeted mutex (further refered as the GOOD BOY MUTEX)  
 ```
     >whatis mutex_lock
     void mutex_lock(struct mutex *);
 ```
-alright Jacques stuck again... the good boy got passed as a pointer, that means a caller function  
+alright Jacques struck again... the good boy got passed as a pointer, that means a caller function  
 had to somehow obtain it and pass as an argument  
 ```
     crash> dis -r ffffffff82ffdff9                      <----- caller function
@@ -130,7 +130,7 @@ had to somehow obtain it and pass as an argument
     0xffffffff82ffdff4 <rtnetlink_rcv+0x14>:        callq  0xffffffff83110b60 <mutex_lock>
     0xffffffff82ffdff9 <rtnetlink_rcv+0x19>:        mov    %rbx,%rdi
 ```
-before we plainstupidly check the good boy, lets find out, whether we really called that function with this  
+before we plainstupidly check the good boy, let's find out, whether we really called that function with this  
 argument... cpu could have done the argument passing somewhere else and then jump to mutex_lock caller  
 ```
     crash> dis ffffffff82ffdff9 | grep -E "<rtnetlink_rcv+0x14>$"
@@ -158,7 +158,7 @@ nope, we're safe
 ```
 counter is -3... that sucks  
   
-lets check ip now
+let's check ip now
 ```
     crash> bt 10485
     PID: 10485  TASK: ffff9a6475814f10  CPU: 5   COMMAND: "ip"
@@ -228,7 +228,7 @@ now from something completely differet - ethclient
     #13 [ffff9a63f949ff00] sys_ioctl at ffffffff82c2fe41
     #14 [ffff9a63f949ff50] system_call_fastpath at ffffffff8311f7d5
 ```
-mutex got locked... lets get the address from caller function
+mutex got locked... let's get the address from caller function
 ```
     crash> dis -r ffffffffc018b51c | tail
     0xffffffffc018b4f6 <e1000_release_eeprom+0x46>: mov    $0xffffffffc019d180,%rdi
@@ -242,7 +242,7 @@ mutex got locked... lets get the address from caller function
     0xffffffffc018b517 <e1000_release_eeprom+0x67>: callq  0xffffffff83110b60 <mutex_lock>
     0xffffffffc018b51c <e1000_release_eeprom+0x6c>: jmp    0xffffffffc018b4dc <e1000_release_eeprom+0x2c>
 ```
-again, lets check whether this argument really got passed
+again, let's check whether this argument really got passed
 ```
     crash> dis e1000_release_eeprom | grep -E "<e1000_release_eeprom+0x(60|67)>$"
     crash>
@@ -265,7 +265,7 @@ alright we're safe
                 counter = 0x0
 ```
 hmm diffrent mutex (further refered as the BAD BOY MUTEX) and the counter is -1,  
-this means ethtool is the only victim here, lets find the murderer  
+this means ethtool is the only victim here, let's find the murderer  
   
 is the caller function messing with the bad boy?  
 ```
@@ -293,11 +293,11 @@ looks like it does...
 is it possible, that bad boy should have gotten unlocked and it didnt?  
 there are few jumps in "... [1]", however they are irrelevant, since every unlocking  
 ends up with returning from the function and since we HAVE called locking function it is ovious we didn't unlock  
-anything. alright, lets just remember for now, that bad boy got locked here and that was the only thing that happend to him.  
+anything. alright, let's just remember for now, that bad boy got locked here and that was the only thing that happend to him.  
 there are two possibilities now -> either bad boy commited suicide (locked himself twice in the same process)  
 or someone put him to sleep.  
   
-lets check the caller of a caller function
+let's check the caller of a caller function
 ```
      #3 [ffff9a63f949fb78] mutex_lock at ffffffff83110b7f                           <---- target function
      #4 [ffff9a63f949fb90] e1000_release_eeprom at ffffffffc018b51c [e1000]         <---- caller function
@@ -345,9 +345,9 @@ comparsions before jumps [3] look crackable...first we check wheter it has any p
     0xffffffffc018e5b8 <e1000_read_eeprom+0x208>:   jmpq   0xffffffffc018e409 <e1000_read_eeprom+0x59>
     0xffffffffc018e5e5 <e1000_read_eeprom+0x235>:   jmpq   0xffffffffc018e404 <e1000_read_eeprom+0x54>
 ```
-god damnit...
+god damnit...  
+let's check the source code
 ```
-    lets check source code
 
     crash> sym ffffffffc018e475
     ffffffffc018e475 (T) e1000_read_eeprom+0xc5 [e1000] /usr/src/debug/kernel-3.10.0-861.el7/linux-3.10.0-861.el7.PROJECT.v2.x86_64/
@@ -411,7 +411,7 @@ fail implying that Inspector's analysis was a complete waste of time and making 
 Inspector Jacques task:  
 check all branches of type [2], whether they mess with bad boy or nested_mutex flag  
   
-lets focus on e1000_do_read_eeprom from another perspective  
+let's focus on e1000_do_read_eeprom from another perspective  
 ```
 static s32 e1000_do_read_eeprom(struct e1000_hw *hw, u16 offset, u16 words, u16 *data)
 {
@@ -452,7 +452,7 @@ Jacques is also willing to pay God for type not matching any of the options...
     0xffffffffc01931b1 <e1000_get_eeprom+0xe1>: movzwl %si,%esi
     0xffffffffc01931b4 <e1000_get_eeprom+0xe4>: callq  0xffffffffc018e3b0 <e1000_read_eeprom>   <---- target
 ```
-lets read the value of -0x30(%rbp) [4] from stack (check for messing with rbp or not pushing it as first  
+let's read the value of -0x30(%rbp) [4] from stack (check for messing with rbp or not pushing it as first  
 register... everything ok). we want to read RBP of e1000_get_eeprom [2] that means we have to find  
 caller caller RET return value [3]  
   
@@ -493,7 +493,7 @@ finaly the damned type...
         page_size = 0x0
     }
 ```
-alright lets check the e1000_do_read_eeprom's branch...
+alright let's check the e1000_do_read_eeprom's branch...
 ```
     ...
     else if (eeprom->type == e1000_eeprom_microwire) {
